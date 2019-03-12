@@ -1,4 +1,6 @@
-#sajat fejlesytesu erzekenzseg analizalo program. a ca1pc model parametereit varialjuk egyesevel. minden futtatasbol elvegezzuk a feature extrakciot
+"""sajat fejlesztesu erzekenyseg analizalo program. a ca1pc model parametereit varialjuk egyesevel. minden futtatasbol elvegezzuk
+ a feature extrakciot. ez a valtozat mar automatikusan egyezteti a modell es a kiserleti adataink valid feature listajat.
+a parameterek es a feature-ok normalasa is megtortenik az egyes fuggvenyek segitsegevel"""
 import numpy as np
 
 from ca1_pc_model import ca1_pc
@@ -15,8 +17,25 @@ except:
     import pickle
 import gzip
 
+from normalize_params import normalize_params
+
+from valid_feat_list_egyezteto import valid_feat_list_egyezteto
+
+from normalize_feats import normalize_feats
+
+#parameternormalashoz:
+list_minmax = []
+
+#az egyes min es max ertekek ahogyan az optimalizacional a boundaryben voltak
+lmin = [0.01,5.0,0.01,0.05,0.01,0.05,0.01,5e-05,0.001,0.001,-0.04,1.0,5.0,0.1,0.0002,0.001,0.1,0.1]
+
+lmax = [0.05,15.0,0.2,0.5,0.2,0.5,0.2,5e-04,0.01,0.01,-0.025,5.0,15.0,0.5,0.02,0.1,5,5]
+
+list_minmax.append(lmin)
+list_minmax.append(lmax)
+
 #eredeti
-"""parameter_list_stabil = [0.0345192775248,
+parameter_list_stabil = [0.0345192775248,
 					9.36306346883,
 					0.0502860139359,
 					0.0671801816115,
@@ -33,7 +52,13 @@ import gzip
     				0.0112866326715,
     				0.0817014108486,
     				4.42551608175,
-    				0.1]"""
+    				0.1]
+
+#print(parameter_list_stabil)
+#itt normaljuk a parametereket
+parameter_list_stabil = (normalize_params(parameter_list_stabil,list_minmax))
+#print(parameter_list_stabil)
+
 
 #masodik kombo
 # parameter_list_stabil = [0.0357,
@@ -57,24 +82,24 @@ import gzip
 
 
 #elso kombo
-parameter_list_stabil = [0.0273,
-				            10.1819,
-				            0.0570,
-				            0.0623,
-				            -0.0317,
-				            0.5071,
-				            0.0848,
-				            0.0002,
-				            -0.0009,
-				            0.0065,
-				            -0.0286,
-				            1.8327,
-				            4.4535,
-				            0.3201,
-				            0.0119,
-				            0.0744,
-				            5.0507,
-				            0.0967]
+# parameter_list_stabil = [0.0273,
+# 				            10.1819,
+# 				            0.0570,
+# 				            0.0623,
+# 				            -0.0317,
+# 				            0.5071,
+# 				            0.0848,
+# 				            0.0002,
+# 				            -0.0009,
+# 				            0.0065,
+# 				            -0.0286,
+# 				            1.8327,
+# 				            4.4535,
+# 				            0.3201,
+# 				            0.0119,
+# 				            0.0744,
+# 				            5.0507,
+# 				            0.0967]
 
 
 
@@ -262,14 +287,22 @@ trace['stim_start'] = [delay]
 trace['stim_end'] = [delay + duration]
 traces.append(trace)
 
-
+#feature extraction a valtozatlan, vagyis stabil parameterekre
 traces_results_stabil = efel.getFeatureValues(traces, feature_list)
 
 #ez a matrix csak egy soros. az adott stabil/eredeti parameterkombinaciora adott featureok
 feature_matrix_stabil = []
 
 """ez az 5 feature azert lesz kiszedve, mert osszevetve a Sara fele experimentalis adatokbol kivont feature listaval. a ketto metszete lesz valid. tehat ami itt az ottaniakon felul valid marad ki lesz vonva innen es forditva"""
-invalid_feature_list = ['min_AHP_indices', 'APlast_width', 'decay_time_constant_after_stim', 'peak_time', 'depolarized_base']
+#invalid_feature_list = ['min_AHP_indices', 'APlast_width', 'decay_time_constant_after_stim', 'peak_time', 'depolarized_base']
+
+"""itt kiszedjuk a diszkret featureoket is"""
+diszkret_feats = ["Spikecount","Spikecount_stimint","number_initial_spikes","burst_number","is_not_stuck","adaptation_index","adaptation_index2","irregularity_index","AP_begin_indices","AP_end_indices","AP_fall_indices","AP_rise_indices","burst_ISI_indices","min_AHP_indices","peak_indices"]
+
+"""itt kiszedem a timeot mert a featnormalas nem megy miatta mivel a varianciaja 0"""
+#menjinnen = ["time"]
+
+invalid_feature_list = diszkret_feats #+invalid_feature_list + menjinnen
 
 valid_feature_list = []
 
@@ -285,7 +318,10 @@ for i in range(len(traces_results_stabil)):
 			if not np.array(value).any():
 
 				invalid_feature_list.append(key)
-			
+
+#itt hivjuk meg a kiserleti es amodell valid listakat osszehangolo fvt
+invalid_feature_list = valid_feat_list_egyezteto(invalid_feature_list)
+
 
 
 traces=[]
@@ -297,6 +333,7 @@ for i in range(len(parameter_list_stabil)):
 
 	parameter_list = list(parameter_list_stabil)
 
+	#a parametereket 10%-kal perturbaljuk
 	parameter_list[i] *= 1.1
 
 
@@ -315,7 +352,7 @@ for i in range(len(parameter_list_stabil)):
 	traces.append(trace)
 	break
 	
-
+#feature extraction minden perturbalt parameteru futtatasra
 traces_results = efel.getFeatureValues(traces, feature_list)
 
 feature_matrix = []
@@ -342,6 +379,18 @@ for i in range(len(traces_results)):
 
 valid_feature_list = [key for key, value in traces_results[0].iteritems() if key not in invalid_feature_list]
 
+#elmentem a valid feat listat hogy tudjam hasznalni az osszehangolsahoz a feature normalizalas soran
+pickle.dump(valid_feature_list, gzip.GzipFile("valid_feature_list.p", "wb"))
+
+print(valid_feature_list)
+print(len(valid_feature_list))
+
+#csinalok egy fvt ami a valid feature listankat atadja (a feature normalizalo fvnek)
+"""def valid_feat_list_atado(v):
+    v = valid_feature_list
+    return v"""
+
+
 # valid_feature_list_stabil = [x for key, value in traces_results_stabil[0].iteritems() if key not in invalid_feature_list]
 
 for key, value in traces_results_stabil[0].iteritems():
@@ -356,20 +405,20 @@ for key, value in traces_results_stabil[0].iteritems():
 		        or key == 'AP_rise_rate' or key == 'fast_AHP' or key == 'AP_begin_time' or key == 'AP_begin_width' or key == 'AP_duration'
 		        or key == 'AP_duration_change' or key == 'AP_duration_half_width_change' or key == 'fast_AHP_change' or key == 'AP_rise_rate_change' or key == 'AP_width'): 
 
-			feature_matrix_stabil.append(np.mean(value[1:]))
+			feature_matrix_stabil.append(normalize_feats(np.mean(value[1:]),key))
 
 		elif len(value) > 1: 
 
-			feature_matrix_stabil.append(np.mean(value))
+			feature_matrix_stabil.append(normalize_feats(np.mean(value),key))
 
 		else:	
 
-			feature_matrix_stabil.append(value[0])
+			feature_matrix_stabil.append(normalize_feats(value[0],key))
 
 pickle.dump(feature_matrix_stabil, gzip.GzipFile("feature_matrix_stabil.p", "wb"))
 
-print(feature_matrix_stabil)
-print("*"*200)
+print(len(feature_matrix_stabil))
+#print("*"*200)
 
 for i in range(len(traces_results)):
 
@@ -385,23 +434,28 @@ for i in range(len(traces_results)):
 	           or key == 'AP_rise_rate' or key == 'fast_AHP' or key == 'AP_begin_time' or key == 'AP_begin_width' or key == 'AP_duration'
 	           or key == 'AP_duration_change' or key == 'AP_duration_half_width_change' or key == 'fast_AHP_change' or key == 'AP_rise_rate_change' or key == 'AP_width'): 
 
-				model_features.append(np.mean(value[1:]))
+				model_features.append(normalize_feats(np.mean(value[1:]),key))
 
 			elif len(value) > 1: 
 
-				model_features.append(np.mean(value))
+				model_features.append(normalize_feats(np.mean(value),key))
 
 			else:	
 
-				model_features.append(value[0])
+				model_features.append(normalize_feats(value[0],key))
 	#a 18 varialt parameterkombinaciora adott featureok
 	
 	#feature matrix elkeszitese
 	feature_matrix.append(model_features)
 #elmentjuk a valid featureok listajat es a feature matrixot
+"""pickle.dump(feature_matrix, gzip.GzipFile("feature_matrix.p", "wb"))
+
+print(valid_feature_list)
+print(len(valid_feature_list))"""
+
 pickle.dump(feature_matrix, gzip.GzipFile("feature_matrix.p", "wb"))
 
-pickle.dump(valid_feature_list, gzip.GzipFile("valid_feature_list.p", "wb"))
+#pickle.dump(valid_feature_list, gzip.GzipFile("valid_feature_list.p", "wb"))
 
 #differencia matrix elkeszitese
 diff_feat = [[0 for x in range(len(feature_matrix[0]))] for y in range(len(feature_matrix))]
@@ -422,13 +476,13 @@ pickle.dump(diff_matrix, gzip.GzipFile("diff_matrix.p", "wb"))
 
 
 	 
-print("*"*456)
+# print("*"*456)
 
-print(feature_matrix_stabil[3],feature_matrix_stabil[5])
-print("*"*456)
+# print(feature_matrix_stabil[3],feature_matrix_stabil[5])
+# print("*"*456)
 
-print(diff_matrix)
+# print(diff_matrix)
 
-print(len(feature_matrix[0]),len(feature_matrix))
+# print(len(feature_matrix[0]),len(feature_matrix))
 
 
